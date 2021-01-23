@@ -20,7 +20,7 @@ LICENSE file in the root directory of this source tree.
 #include "mybmm.h"
 #include "jbd.h"		/* For session info */
 #include "jbd_info.h"		/* For info struct */
-#include "MQTTClient.h"
+#include "mqtt.h"
 
 int debug = 9;
 
@@ -135,40 +135,7 @@ enum JBDTOOL_ACTION {
 	JBDTOOL_ACTION_LIST
 };
 
-static char address[64];
-static char clientid[64];
-static char topic[64];
-#define QOS 1
-#define TIMEOUT     10000L
-
-int mqtt_send(char *message) {
-	MQTTClient client;
-	MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
-	MQTTClient_message pubmsg = MQTTClient_message_initializer;
-	MQTTClient_deliveryToken token;
-	int rc;
-
-	MQTTClient_create(&client, address, clientid, MQTTCLIENT_PERSISTENCE_NONE, NULL);
-	conn_opts.keepAliveInterval = 20;
-	conn_opts.cleansession = 1;
-	if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
-		printf("Failed to connect, return code %d\n", rc);
-		exit(-1);
-	}
-	dprintf(1,"client: %s, message: %s, topic: %s\n", clientid, message, topic);
-	pubmsg.payload = message;
-	pubmsg.payloadlen = strlen(message);
-	pubmsg.qos = QOS;
-	pubmsg.retained = 1;
-	MQTTClient_publishMessage(client, topic, &pubmsg, &token);
-	rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
-	dprintf(1,"delivered message.\n");
-	MQTTClient_disconnect(client, 10000);
-	MQTTClient_destroy(&client);
-	return rc;
-}
-
-static pid_t pid;
+static int pid;
 static int term = 0;
 void catch_alarm(int sig) {
 	printf("timeout expired, killing pid %d\n", (int)pid);
@@ -180,6 +147,10 @@ void catch_alarm(int sig) {
                 alarm(3);
         }
 }
+
+static char address[64];
+static char clientid[64];
+static char topic[64];
 
 int pretty;
 int get_info(jbd_session_t *s) {
@@ -196,7 +167,7 @@ int get_info(jbd_session_t *s) {
     			serialized_string = json_serialize_to_string_pretty(root_value);
 		else
     			serialized_string = json_serialize_to_string(root_value);
-		mqtt_send(serialized_string);
+		mqtt_send(address, clientid, serialized_string, topic);
 		json_free_serialized_string(serialized_string);
 	}
 	s->pp->close(s);
