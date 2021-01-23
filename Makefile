@@ -4,7 +4,7 @@ MQTT=yes
 
 PROG=$(shell basename $(shell pwd))
 MYBMM_SRC=../mybmm
-TRANSPORTS=$(shell cat $(MYBMM_SRC)/Makefile | grep ^TRANSPORTS | awk -F= '{ print $$2 }')
+TRANSPORTS=$(shell cat $(MYBMM_SRC)/Makefile | grep ^TRANSPORTS | head -1 | awk -F= '{ print $$2 }')
 ifneq ($(BLUETOOTH),yes)
 _TMPVAR := $(TRANSPORTS)
 TRANSPORTS = $(filter-out bt.c, $(_TMPVAR))
