@@ -11,7 +11,7 @@ Requires PAHO https://github.com/eclipse/paho.mqtt.c
 
 MQTT specified as
 
-	jbdmqtt -m broker hostname:port,ClientID,topic
+	jbdmqtt -m brokerhost:port,ClientID,topic
 
 
 MQTT example for IP(monitor pack with dns name of "pack_01", interval every 30s, run in the background, output to log):
