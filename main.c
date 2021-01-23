@@ -114,6 +114,8 @@ void display_info(jbd_info_t *info) {
 }
 
 int init_pack(mybmm_pack_t *pp, mybmm_config_t *c, char *type, char *transport, char *target, char *opts, mybmm_module_t *cp, mybmm_module_t *tp) {
+	dprintf(1,"pp: %p, c: %p, type: %s, transport: %s, target: %s, opts: %s, tp: %p\n",
+		pp, c, type ? type : "", transport ? transport : "", target ? target : "", opts ? opts : "", tp);
 	memset(pp,0,sizeof(*pp));
 	strcpy(pp->type,type);
 	if (transport) strcpy(pp->transport,transport);
@@ -153,15 +155,13 @@ int mqtt_send(char *message) {
 		printf("Failed to connect, return code %d\n", rc);
 		exit(-1);
 	}
-	dprintf(1,"message: %s\n", message);
+	dprintf(1,"client: %s, message: %s, topic: %s\n", clientid, message, topic);
 	pubmsg.payload = message;
 	pubmsg.payloadlen = strlen(message);
 	pubmsg.qos = QOS;
-	pubmsg.retained = 0;
+	pubmsg.retained = 1;
 	MQTTClient_publishMessage(client, topic, &pubmsg, &token);
-//	printf("Waiting for up to %d seconds for publication of %s\n" "on topic %s for client with ClientID: %s\n", (int)(TIMEOUT/1000), PAYLOAD, TOPIC, CLIENTID);
 	rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
-//	printf("Message with delivery token %d delivered\n", token);
 	dprintf(1,"delivered message.\n");
 	MQTTClient_disconnect(client, 10000);
 	MQTTClient_destroy(&client);
@@ -258,8 +258,7 @@ int bgrun(jbd_session_t *s, int timeout) {
 
 		/* Call func */
 		dprintf(1,"updating...\n");
-		get_info(s);
-		_exit(1);
+		_exit(get_info(s));
 	} else {
 		/* Parent */
 		struct sigaction act1, oact1;
@@ -393,13 +392,20 @@ int main(int argc, char **argv) {
 	dprintf(2,"transport: %s\n", transport);
 
 	tp = mybmm_load_module(conf,transport,MYBMM_MODTYPE_TRANSPORT);
-	if (!tp) return 1;
+	if (!tp) {
+		lprintf(LOG_ERROR,"unable to load transport module: %s\n",transport);
+		return 1;
+	}
 	cp = mybmm_load_module(conf,"jbd",MYBMM_MODTYPE_CELLMON);
-	if (!cp) return 1;
+	if (!cp) {
+		lprintf(LOG_ERROR,"unable to load cellmon module: %s\n","jbd");
+		return 1;
+	}
 
 	/* Init the pack */
 	if (init_pack(&pack,conf,"jbd",transport,target,0,cp,tp)) return 1;
 
+	dprintf(1,"back: %d\n", back);
 	if (back) {
 		become_daemon();
 		if (logfile) log_open("mybmm",logfile,LOG_TIME|LOG_INFO|LOG_WARNING|LOG_ERROR|LOG_SYSERR|LOG_DEBUG);
@@ -410,14 +416,14 @@ int main(int argc, char **argv) {
 
 	root_value = json_value_init_object();
 	root_object = json_value_get_object(root_value);
-	while(interval) {
+	do {
 		time(&start);
 		bgrun(pack.handle,interval);
 		time(&end);
 		diff = end - start;
 		dprintf(1,"start: %d, end: %d, diff: %d\n", (int)start, (int)end, (int)diff);
 		if (diff < interval) sleep(interval-(int)diff);
-	}
+	} while(interval);
 	json_value_free(root_value);
 	fclose(outfp);
 	return 0;
