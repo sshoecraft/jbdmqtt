@@ -9,9 +9,9 @@ Then edit the Makefile and set BLUETOOTH=yes
 Requires PAHO https://github.com/eclipse/paho.mqtt.c
 
 
-Transports specified exactly as in mybmm.conf
+MQTT specified as
 
-jbdtool -t <transport:target,opt1[,optN]>
+	jbdmqtt -m broker hostname:port,ClientID,topic
 
 
 MQTT example for IP(monitor pack with dns name of "pack_01", interval every 30s, run in the background, output to log):
@@ -21,44 +21,49 @@ MQTT example for IP(monitor pack with dns name of "pack_01", interval every 30s,
 
 TRANSPORT EXAMPLES:
 
+Transports specified exactly as in mybmm.conf
+
+	jbdmqtt -t <transport:target,opt1[,optN]>
+
+
 For CAN:
 
-jbdtool -t can:<device>[,speed]
+jbdmqtt -t can:<device>[,speed]
 
 example:
 
-	jbdtool -t can:can0,500000
+	jbdmqtt -t can:can0,500000
 
 For Serial:
 
-jbdtool -t serial:<device>[,speed]
+jbdmqtt -t serial:<device>[,speed]
 
 example:
 
-	jbdtool -t serial:/dev/ttyS0,9600
+	jbdmqtt -t serial:/dev/ttyS0,9600
 
 For Bluetooth:
 
-jbdtool -t bt:[mac addr][,desc]
+jbdmqtt -t bt:[mac addr][,desc]
 
 exmples:
 
-	jbdtool -t bt:01:02:03:04:05,06
+	jbdmqtt -t bt:01:02:03:04:05,06
 
-	jbdtool -t bt:01:02:03:04:05:06,ff01
+	jbdmqtt -t bt:01:02:03:04:05:06,ff01
 
 For IP/esplink:
 
-jbdtool -t ip:<ip addr>[,port]
+jbdmqtt -t ip:<ip addr>[,port]
 
 example:
 
-	jbdtool -t ip:10.0.0.1,23
+	jbdmqtt -t ip:10.0.0.1,23
 
 for CANServer/Can-over-ip
 
-jbdtool -t can_ip:<ip addr>,[port],<interface>,[speed]
+jbdmqtt -t can_ip:<ip addr>,[port],<interface>,[speed]
 
 example:
 
-	jbdtool -t can_ip:10.0.0.1,3930,can0,500000
+	jbdmqtt -t can_ip:10.0.0.1,3930,can0,500000
