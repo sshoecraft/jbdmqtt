@@ -14,6 +14,13 @@ Transports specified exactly as in mybmm.conf
 jbdtool -t <transport:target,opt1[,optN]>
 
 
+MQTT example for IP(monitor pack with dns name of "pack_01", interval every 30s, run in the background, output to log):
+
+	jbdmqtt -m localhost,pack_01,Powerwall/pack_01 -t ip:pack_01 -i 30 -b -l /var/log/jbdmqtt/pack_01.log
+
+
+TRANSPORT EXAMPLES:
+
 For CAN:
 
 jbdtool -t can:<device>[,speed]
@@ -55,33 +62,3 @@ jbdtool -t can_ip:<ip addr>,[port],<interface>,[speed]
 example:
 
 	jbdtool -t can_ip:10.0.0.1,3930,can0,500000
-
-
->>> CAN bus cannot read/write parameters
-
-
-to read all parameters using bluetooth:
-
-jbdtool -t bt:01:02:03:04:06 -r -a
-
-to list the params the program supports, use -l
-
-to specify single params, specify them after -r
-
-jbdtool -t bt:01:02:03:04:06 -r BalanceStartVoltage BalanceWindow
-
-to read a list of parameters using a file use -f:
-
-jbdtool -t serial:/dev/ttyS0,9600 -r -f jbd_settings.fig
-
-use -j and -J (pretty) to specify filename is a json file
-
-
-to write parameters, specify a key value pair after -w
-
-jbdtool -t ip:10.0.0.1 -w BalanceStartVoltage 4050 BalanceWindow 20
-
-
-to send all output to a file, use -o.   If the filename ends with .json, file will be written in JSON format:
-
-jbdtool -t can:can0,500000 -j -o pack_1.json
