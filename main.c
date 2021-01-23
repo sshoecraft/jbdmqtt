@@ -24,9 +24,6 @@ LICENSE file in the root directory of this source tree.
 
 int debug = 9;
 
-FILE *outfp;
-extern FILE *logfp;
-
 JSON_Value *root_value;
 JSON_Object *root_object;
 char *serialized_string = NULL;
@@ -125,6 +122,7 @@ int init_pack(mybmm_pack_t *pp, mybmm_config_t *c, char *type, char *transport, 
         pp->read = cp->read;
         pp->close = cp->close;
         pp->handle = cp->new(c,pp,tp);
+	list_add(c->packs,pp,sizeof(pp));
         return 0;
 }
 
@@ -148,12 +146,8 @@ void catch_alarm(int sig) {
         }
 }
 
-static char address[64];
-static char clientid[64];
-static char topic[64];
-
 int pretty;
-int get_info(jbd_session_t *s) {
+int get_info(jbd_session_t *s,mqtt_session_t *m) {
 	jbd_info_t info;
 	int r;
 
@@ -167,14 +161,14 @@ int get_info(jbd_session_t *s) {
     			serialized_string = json_serialize_to_string_pretty(root_value);
 		else
     			serialized_string = json_serialize_to_string(root_value);
-		mqtt_send(address, clientid, serialized_string, topic);
+		mqtt_send(m, serialized_string, 15);
 		json_free_serialized_string(serialized_string);
 	}
 	s->pp->close(s);
 	return r;
 }
 
-int bgrun(jbd_session_t *s, int timeout) {
+int bgrun(jbd_session_t *s, mqtt_session_t *m, int timeout) {
 //	int pty;
 
 	dprintf(1,"s: %p, timeout: %d\n", s, timeout);
@@ -229,7 +223,7 @@ int bgrun(jbd_session_t *s, int timeout) {
 
 		/* Call func */
 		dprintf(1,"updating...\n");
-		_exit(get_info(s));
+		_exit(get_info(s,m));
 	} else {
 		/* Parent */
 		struct sigaction act1, oact1;
@@ -267,7 +261,7 @@ void usage() {
 #ifdef DEBUG
 	printf("  -d <#>		debug output\n");
 #endif
-	printf("  -c		comma-delimited output\n");
+	printf("  -c <filename>	specify config file\n");
 	printf("  -J		preety-print JSON output\n");
 	printf("  -l <logfile>	write output to logfile\n");
 	printf("  -h		this output\n");
@@ -280,23 +274,27 @@ void usage() {
 int become_daemon(void);
 
 int main(int argc, char **argv) {
-	int opt,action;
-	char *transport,*target,*logfile;
+	char *transport,*target,*logfile,*configfile,*name;
 	mybmm_config_t *conf;
 	mybmm_module_t *cp,*tp;
 	mybmm_pack_t pack;
-	int back,interval;
+	int opt,back,interval;
 	char *mqtt;
 	time_t start,end,diff;
+	char clientid[32],topic[192];
+	mqtt_session_t *m;
 
 	log_open("mybmm",0,LOG_INFO|LOG_WARNING|LOG_ERROR|LOG_SYSERR|LOG_DEBUG);
 
-	action = pretty = 0;
-	transport = target = logfile = 0;
-	interval = back = 0;
+	transport = target = logfile = configfile = name = 0;
+	interval = back = pretty = 0;
 	mqtt = 0;
-	while ((opt=getopt(argc, argv, "+d:bm:i:t:l:hJ")) != -1) {
+	clientid[0] = 0;
+	while ((opt=getopt(argc, argv, "+c:d:bm:i:t:l:hJn:")) != -1) {
 		switch (opt) {
+		case 'c':
+			configfile = optarg;
+			break;
 		case 'd':
 			debug=atoi(optarg);
 			break;
@@ -305,6 +303,9 @@ int main(int argc, char **argv) {
 			break;
 		case 'm':
 			mqtt = optarg;
+			break;
+		case 'n':
+			name = optarg;
 			break;
 		case 'J':
 			pretty = 1;
@@ -332,26 +333,8 @@ int main(int argc, char **argv) {
 			exit(0);
                 }
         }
-	dprintf(2,"transport: %p, target: %p\n", transport, target);
-	if (!transport && action != JBDTOOL_ACTION_LIST) {
-		usage();
-		return 1;
-	}
-
-	
+	if (!name) name = "pack";
 	if (logfile) log_open("mybmm",logfile,LOG_TIME|LOG_INFO|LOG_WARNING|LOG_ERROR|LOG_SYSERR|LOG_DEBUG);
-
-	/* If MQTT, output is compact JSON */
-	if (mqtt) {
-		strcpy(address,strele(0,",",mqtt));
-		strcpy(clientid,strele(1,",",mqtt));
-		strcpy(topic,strele(2,",",mqtt));
-		dprintf(1,"address: %s, clientid: %s, topic: %s\n", address, clientid, topic);
-		action = JBDTOOL_ACTION_INFO;
-	} else {
-		printf("error: MUST provide MQTT info!\n");
-		return 1;
-	}
 
 	conf = calloc(sizeof(*conf),1);
 	if (!conf) {
@@ -359,22 +342,68 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	conf->modules = list_create();
+	conf->packs = list_create();
 
-	dprintf(2,"transport: %s\n", transport);
+	dprintf(1,"configfile: %p\n", configfile);
+	if (configfile) {
+		conf->cfg = cfg_read(configfile);
+		dprintf(1,"cfg: %p\n", conf->cfg);
+		if (!conf->cfg) {
+			lprintf(LOG_SYSERR,"cfg_read");
+			return 1;
+		}
+		memset(&pack,0,sizeof(pack));
+		dprintf(1,"name: %s\n",name);
+		pack_add(conf,name,&pack);
+		mqtt_init(conf);
+	} else {
+		if (!transport) {
+			printf("error: transport must be specified if no configfile\n");
+			return 1;
+		}
+		tp = mybmm_load_module(conf,transport,MYBMM_MODTYPE_TRANSPORT);
+		if (!tp) {
+			lprintf(LOG_ERROR,"unable to load transport module: %s\n",transport);
+			return 1;
+		}
+		cp = mybmm_load_module(conf,"jbd",MYBMM_MODTYPE_CELLMON);
+		if (!cp) {
+			lprintf(LOG_ERROR,"unable to load cellmon module: %s\n","jbd");
+			return 1;
+		}
 
-	tp = mybmm_load_module(conf,transport,MYBMM_MODTYPE_TRANSPORT);
-	if (!tp) {
-		lprintf(LOG_ERROR,"unable to load transport module: %s\n",transport);
+		/* Init the pack */
+		if (init_pack(&pack,conf,"jbd",transport,target,0,cp,tp)) return 1;
+	}
+	if (!list_count(conf->packs)) {
+		printf("error: no pack defined!  define one on the command line or in a config file!\n");
 		return 1;
 	}
-	cp = mybmm_load_module(conf,"jbd",MYBMM_MODTYPE_CELLMON);
-	if (!cp) {
-		lprintf(LOG_ERROR,"unable to load cellmon module: %s\n","jbd");
+
+	/* If MQTT, output is compact JSON */
+	dprintf(1,"mqtt: %p\n", mqtt);
+	if (mqtt) {
+		strcpy(conf->mqtt_broker,strele(0,",",mqtt));
+		strcpy(clientid,strele(1,",",mqtt));
+		strcpy(conf->mqtt_topic,strele(2,",",mqtt));
+		dprintf(1,"broker: %s, clientid: %s, topic: %s\n", conf->mqtt_broker, clientid, conf->mqtt_topic);
+	}
+	if (!strlen(conf->mqtt_broker)) strcpy(conf->mqtt_broker,"127.0.0.1");
+	if (!strlen(conf->mqtt_topic)) {
+		printf("error: MUST provide MQTT topic info!\n");
 		return 1;
 	}
+	if (!strlen(clientid)) strcpy(clientid,name);
 
-	/* Init the pack */
-	if (init_pack(&pack,conf,"jbd",transport,target,0,cp,tp)) return 1;
+	/* Create full topic name from topic + /clientid  */
+	sprintf(topic,"%s/%s",conf->mqtt_topic,clientid);
+	dprintf(1,"topic: %s\n", topic);
+
+	/* Create a new MQTT session and connect to the broker */
+	m = mqtt_new(conf->mqtt_broker,clientid,topic);
+
+	lprintf(LOG_INFO,"Connecting to Broker...\n");
+	if (mqtt_connect(m,interval ? interval/2 : 20)) return 1;
 
 	dprintf(1,"back: %d\n", back);
 	if (back) {
@@ -382,20 +411,18 @@ int main(int argc, char **argv) {
 		if (logfile) log_open("mybmm",logfile,LOG_TIME|LOG_INFO|LOG_WARNING|LOG_ERROR|LOG_SYSERR|LOG_DEBUG);
 	}
 
-// 	outfp = fdopen(1,"w");
-	if (logfp) outfp = logfp;
-
 	root_value = json_value_init_object();
 	root_object = json_value_get_object(root_value);
 	do {
 		time(&start);
-		bgrun(pack.handle,interval);
+		bgrun(pack.handle,m,interval);
 		time(&end);
 		diff = end - start;
 		dprintf(1,"start: %d, end: %d, diff: %d\n", (int)start, (int)end, (int)diff);
 		if (diff < interval) sleep(interval-(int)diff);
 	} while(interval);
 	json_value_free(root_value);
-	fclose(outfp);
+	mqtt_disconnect(m,5);
+	mqtt_destroy(m);
 	return 0;
 }

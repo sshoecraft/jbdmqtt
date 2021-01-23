@@ -9,12 +9,12 @@ ifneq ($(BLUETOOTH),yes)
 _TMPVAR := $(TRANSPORTS)
 TRANSPORTS = $(filter-out bt.c, $(_TMPVAR))
 endif
-SRCS=main.c daemon.c module.c jbd_info.c jbd.c parson.c list.c utils.c log.c mqtt.c $(TRANSPORTS)
+SRCS=main.c daemon.c module.c pack.c uuid.c worker.c jbd_info.c jbd.c parson.c list.c utils.c mqtt.c cfg.c $(TRANSPORTS)
 OBJS=$(SRCS:.c=.o)
 CFLAGS=-DJBDTOOL -I$(MYBMM_SRC)
 #CFLAGS+=-Wall -O2 -pipe
 CFLAGS+=-Wall -g -DDEBUG=1
-LIBS=-ldl
+LIBS=-ldl -lpthread
 ifeq ($(MQTT),yes)
 CFLAGS+=-DMQTT
 LIBS+=-lpaho-mqtt3c
